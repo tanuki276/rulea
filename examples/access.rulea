@@ -1,0 +1,13 @@
+rule edit:
+    when: user == owner and status != "locked"
+    reason: "Only owner of unlocked resources can edit"
+
+rule delete:
+    when:
+        if role == "admin":
+            True
+        elif user == owner:
+            status != "archived"
+        else:
+            False
+    reason: "Only admin or owner (if not archived) can delete"
