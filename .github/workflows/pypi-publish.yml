@@ -2,7 +2,7 @@ name: Publish to PyPI
 
 on:
   release:
-    types: [published]
+    types: [published]  # GitHubで "Release" を作成し "Publish" すると実行される
 
 permissions:
   id-token: write
@@ -28,4 +28,4 @@ jobs:
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://upload.pypi.org/legacy/
+          pypi-token: ${{ secrets.PYPI_API_TOKEN }}
