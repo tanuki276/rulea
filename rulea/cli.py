@@ -25,3 +25,6 @@ def main():
     else:
         print(f"Rule denied ❌ Reason: {reason}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()
