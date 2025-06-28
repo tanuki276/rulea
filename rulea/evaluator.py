@@ -5,7 +5,9 @@ class SafeEvaluator(ast.NodeVisitor):
         ast.Expression, ast.BoolOp, ast.BinOp, ast.UnaryOp,
         ast.Compare, ast.Name, ast.Load, ast.Constant,
         ast.And, ast.Or, ast.Not, ast.Eq, ast.NotEq, ast.Gt, ast.Lt,
-        ast.GtE, ast.LtE
+        ast.GtE, ast.LtE,
+        ast.Subscript,  # 添字アクセスを許可
+        ast.Index,      # Python3.8以下用（slice内のindex）
     }
 
     def __init__(self, context):
@@ -49,3 +51,16 @@ class SafeEvaluator(ast.NodeVisitor):
         if isinstance(node.op, ast.Not):
             return not operand
         raise ValueError("Unsupported unary operation")
+
+    def visit_Subscript(self, node):
+        # 添字アクセス対応
+        value = self.visit(node.value)
+        # Python3.9以降は node.slice が ast.Constantかも。3.8以下はast.Index
+        if isinstance(node.slice, ast.Index):  # Python3.8以下対応
+            index = self.visit(node.slice.value)
+        else:
+            index = self.visit(node.slice)
+        try:
+            return value[index]
+        except Exception as e:
+            raise ValueError(f"Subscriptアクセスエラー: {e}")
