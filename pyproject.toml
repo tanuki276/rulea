@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rulea"
-version = "1.1.2"
-description = "Rule-based programmable language in Python"
+version = "1.2.0"
+description = "Small declarative authorization policy language for Python"
 authors = [
-  { name="soln", email="you@example.com" }
+  { name="soln" }
 ]
 readme = "README.md"
 requires-python = ">=3.8"
