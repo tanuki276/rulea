@@ -1,8 +1,7 @@
 """Restricted expression evaluator for Rulea policies.
 
-The evaluator intentionally does *not* execute Python.  Rule expressions are
-parsed as Python AST only so we can reuse familiar syntax, then interpreted by
-this allow-listed evaluator.
+The evaluator intentionally does *not* execute Python. Rule expressions are
+parsed as Python AST only so familiar boolean syntax can be reused safely.
 """
 
 from __future__ import annotations
@@ -23,28 +22,11 @@ class SafeEvaluator(ast.NodeVisitor):
     MAX_CONTEXT_DEPTH = 16
 
     ALLOWED_NODES = {
-        ast.Expression,
-        ast.BoolOp,
-        ast.Compare,
-        ast.UnaryOp,
-        ast.Name,
-        ast.Load,
-        ast.Constant,
-        ast.And,
-        ast.Or,
-        ast.Not,
-        ast.Eq,
-        ast.NotEq,
-        ast.Gt,
-        ast.GtE,
-        ast.Lt,
-        ast.LtE,
-        ast.In,
-        ast.NotIn,
-        ast.List,
-        ast.Tuple,
-        ast.Dict,
-        ast.Subscript,
+        ast.Expression, ast.BoolOp, ast.Compare, ast.UnaryOp,
+        ast.Name, ast.Load, ast.Constant, ast.And, ast.Or, ast.Not,
+        ast.Eq, ast.NotEq, ast.Gt, ast.GtE, ast.Lt, ast.LtE,
+        ast.In, ast.NotIn, ast.List, ast.Tuple, ast.Dict, ast.Subscript,
+        ast.Index,  # Python 3.8 compatibility
     }
 
     def __init__(self, context: Mapping[str, Any]):
@@ -59,12 +41,10 @@ class SafeEvaluator(ast.NodeVisitor):
             raise RuleEvaluationError("empty rule expression")
         if len(expr) > self.MAX_EXPRESSION_LENGTH:
             raise RuleEvaluationError("rule expression is too long")
-
         try:
             tree = ast.parse(expr, mode="eval")
         except (SyntaxError, ValueError, TypeError) as exc:
             raise RuleEvaluationError("invalid rule expression") from exc
-
         result = self.visit(tree.body)
         if not isinstance(result, bool):
             raise RuleEvaluationError("rule expression must evaluate to true or false")
@@ -88,6 +68,9 @@ class SafeEvaluator(ast.NodeVisitor):
             raise RuleEvaluationError("unsupported literal")
         return node.value
 
+    def visit_Index(self, node: ast.Index) -> Any:
+        return self.visit(node.value)
+
     def visit_List(self, node: ast.List) -> list:
         return [self.visit(item) for item in node.elts]
 
@@ -105,7 +88,6 @@ class SafeEvaluator(ast.NodeVisitor):
         return result
 
     def visit_BoolOp(self, node: ast.BoolOp) -> bool:
-        # Preserve short-circuit semantics without ever evaluating arbitrary Python.
         if isinstance(node.op, ast.And):
             for value in node.values:
                 if not self._truth(self.visit(value)):
@@ -155,7 +137,6 @@ class SafeEvaluator(ast.NodeVisitor):
 
     def visit_Subscript(self, node: ast.Subscript) -> Any:
         value = self.visit(node.value)
-        # Slices and attribute access are intentionally not supported.
         if isinstance(node.slice, ast.Slice):
             raise RuleEvaluationError("slicing is not allowed")
         key = self.visit(node.slice)
