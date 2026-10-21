@@ -243,6 +243,6 @@ the repository. See [PyPI setup](https://docs.pypi.org/trusted-publishers/adding
 3. Publish a GitHub Release from that commit; the single workflow publishes to PyPI.
 4. Inspect the publish job and verify the released package installation.
 
-`pyproject.toml` is the sole metadata source. The existing LICENSE is preserved
-and included as package license metadata; the former MIT classifier did not
-match that file and has been removed. No license grant is changed by v2.
+## License
+
+Rulea is licensed under the Apache License 2.0. See `LICENSE` for the full license text.
