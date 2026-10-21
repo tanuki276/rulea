@@ -12,11 +12,11 @@ rule owner:
     reason: "Only the owner may edit"
 
 rule editable:
-    when: allow("owner") and not resource.locked
+    when: matches("owner") and not resource.locked
     reason: "Owner required and document must be unlocked"
 
 rule publish:
-    when: allow("editable") and resource.status == "reviewed"
+    when: matches("editable") and resource.status == "reviewed"
     reason: "Document must be editable and reviewed"
 
 rule locked:

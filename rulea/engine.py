@@ -97,6 +97,9 @@ class RuleEngine:
             tree, refs = compile_expression(rule["when"], self._schema)
             rule["tree"] = tree
             rule["refs"] = {ref: self._resolve(ref, rule["namespace"]) for ref in refs}
+            for target in rule["refs"].values():
+                if self._rules[target]["effect"] == "DENY":
+                    raise PolicyError("matches() cannot reference a DENY rule: " + target)
         for group in self._sets.values():
             group["members"] = tuple(self._resolve(n.strip(), group["namespace"]) for n in group["rules"].split(","))
             if len(set(group["members"])) != len(group["members"]):
@@ -152,13 +155,13 @@ class RuleEngine:
                 if rule is None or not rule["enabled"]:
                     return self._decision("NOT_APPLICABLE", name, "Unknown or disabled rule")
                 children = []
-                def allow(ref):
+                def matches(ref):
                     child = evaluate(rule["refs"][ref])
                     children.append(child)
                     if child.result is Result.ERROR:
                         raise ValueError("Composition failed: " + child.rule)
                     return child.allowed
-                evaluator = SafeEvaluator(context, allow)
+                evaluator = SafeEvaluator(context, matches)
                 try:
                     matched = evaluator.evaluate(rule["tree"], rule["when"])
                     result = rule["effect"] if matched else "NOT_APPLICABLE"

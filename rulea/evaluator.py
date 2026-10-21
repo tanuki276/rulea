@@ -69,17 +69,19 @@ def compile_expression(source, schema):
         if isinstance(node, ast.Constant):
             if type(node.value) not in (str, int, float, bool, type(None)):
                 raise PolicyError("Unsupported literal")
+            if type(node.value) is float and not math.isfinite(node.value):
+                raise PolicyError("Nonfinite float literals are forbidden")
             return type(node.value)
         if isinstance(node, (ast.List, ast.Tuple)):
             for child in node.elts:
                 sub(child)
             return list
         if isinstance(node, ast.Call):
-            if not (isinstance(node.func, ast.Name) and node.func.id == "allow"
+            if not (isinstance(node.func, ast.Name) and node.func.id == "matches"
                     and len(node.args) == 1 and not node.keywords
                     and isinstance(node.args[0], ast.Constant)
                     and type(node.args[0].value) is str):
-                raise PolicyError("Only allow(\"rule\") composition is permitted")
+                raise PolicyError("Only matches(\"rule\") composition is permitted")
             references.append(node.args[0].value)
             return bool
         if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
@@ -112,11 +114,11 @@ def compile_expression(source, schema):
 
 
 class SafeEvaluator:
-    def __init__(self, context, allow=None):
+    def __init__(self, context, matches=None):
         self.context = facts(context)
         if type(self.context) is not dict:
             raise ValueError("Context must be a dictionary")
-        self.allow = allow
+        self.matches = matches
         self.trace = []
         self.source = ""
 
@@ -147,9 +149,9 @@ class SafeEvaluator:
         elif isinstance(node, (ast.List, ast.Tuple)):
             value = [self.visit(v) for v in node.elts]
         elif isinstance(node, ast.Call):
-            if self.allow is None:
+            if self.matches is None:
                 raise ValueError("Composition requires an engine")
-            value = self.allow(node.args[0].value)
+            value = self.matches(node.args[0].value)
         elif isinstance(node, ast.UnaryOp):
             value = not self.boolean(self.visit(node.operand))
         elif isinstance(node, ast.BoolOp):

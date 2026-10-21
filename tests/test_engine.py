@@ -31,8 +31,8 @@ def test_operators(expression, expected):
 
 @pytest.mark.parametrize('expression', [
     '__import__("os")', 'user.delete()', 'lambda: True', '[x for x in []]',
-    '(x := True)', 'user.__class__', 'a + b', 'a ** b', 'allow(name)',
-    'allow("x", bad=True)', '1', 'True or dangerous()', 'a is b',
+    '(x := True)', 'user.__class__', 'a + b', 'a ** b', 'matches(name)',
+    'matches("x", bad=True)', '1', 'True or dangerous()', 'a is b',
 ])
 def test_unsafe_rejected_at_load(expression):
     with pytest.raises(PolicyError):
@@ -75,15 +75,15 @@ def test_composition_and_trace():
         assert all(x == d for x in pool.map(lambda _: e.decide('documents.publish', context), range(30)))
 
 
-def test_composition_error_does_not_turn_into_allow():
-    e = RuleEngine.from_string('rule a:\n    when: missing\nrule b:\n    when: not allow("a")\n')
+def test_composition_error_does_not_turn_into_matches():
+    e = RuleEngine.from_string('rule a:\n    when: missing\nrule b:\n    when: not matches("a")\n')
     assert e.decide('b', {}).result is Result.ERROR
 
 
 @pytest.mark.parametrize('source', [
     'rule a:\n    when: True\nrule a:\n    when: False',
-    'rule a:\n    when: allow("missing")',
-    'rule a:\n    when: allow("b")\nrule b:\n    when: allow("a")',
+    'rule a:\n    when: matches("missing")',
+    'rule a:\n    when: matches("b")\nrule b:\n    when: matches("a")',
     'rule a:\n    when: True\n    action: send_email()',
     'rule a:\n    when: True\n    extends: b',
     'rule a:\n    when: True\n    enabled: yes',
@@ -114,7 +114,7 @@ def test_default_disabled_and_error():
 
 
 def test_modules():
-    src = 'import owners\nrule test:\n    when: allow("common.owner")\n'
+    src = 'import owners\nrule test:\n    when: matches("common.owner")\n'
     module = 'namespace common\nrule owner:\n    when: True\n'
     assert RuleEngine.from_string(src, modules={'owners': module}).decide('test', {}).allowed
     with pytest.raises(PolicyError):
@@ -176,3 +176,52 @@ def test_cli_failing_cases_and_format(tmp_path):
     cases = tmp_path / 'cases.json'
     cases.write_text('[{"rule":"a","context":{},"result":"DENY"}]')
     assert main(['test', str(path), str(cases)]) == 1
+
+
+@pytest.mark.parametrize('condition', ['matches("blocked")', 'not matches("blocked")', 'False and matches("blocked")'])
+@pytest.mark.parametrize('enabled', ['true', 'false'])
+def test_deny_references_are_never_predicates(condition, enabled):
+    source = ('rule blocked:\n    when: True\n    effect: DENY\n    enabled: ' + enabled +
+              '\nrule access:\n    when: ' + condition + '\n')
+    with pytest.raises(PolicyError, match='cannot reference a DENY rule'):
+        RuleEngine.from_string(source)
+
+
+def test_old_allow_is_not_a_v2_alias():
+    with pytest.raises(PolicyError, match='Only matches'):
+        RuleEngine.from_string('rule a:\n    when: True\nrule b:\n    when: allow("a")\n')
+
+
+@pytest.mark.parametrize('literal', ['1e309', '1e9999', '1E+309'])
+@pytest.mark.parametrize('template', ['{} > 0', 'False and {} > 0', '1 in [{}]'])
+def test_nonfinite_literals_rejected_during_compile(literal, template):
+    with pytest.raises(PolicyError, match='Nonfinite float'):
+        engine(template.format(literal))
+
+
+def test_finite_float_literal():
+    assert engine('1e308 > 0').decide('test', {}).allowed
+
+
+@pytest.mark.parametrize('effect', ['ALLOW', 'DENY'])
+@pytest.mark.parametrize('condition', ['True', 'False'])
+def test_direct_and_ruleset_result_contract(effect, condition):
+    source = ('rule a:\n    when: ' + condition + '\n    effect: ' + effect +
+              '\nruleset all:\n    rules: a\n    strategy: first_match\n    default: NOT_APPLICABLE\n')
+    e = RuleEngine.from_string(source)
+    assert e.decide('a', {}).result is (Result(effect) if condition == 'True' else Result.DENY)
+    assert e.decide('all', {}).result is (Result(effect) if condition == 'True' else Result.NOT_APPLICABLE)
+
+
+@pytest.mark.parametrize('condition,enabled,expected', [('True', 'true', False), ('False', 'true', True), ('True', 'false', True)])
+def test_predicate_negation_contract(condition, enabled, expected):
+    source = ('rule predicate:\n    when: ' + condition + '\n    enabled: ' + enabled +
+              '\nrule access:\n    when: not matches("predicate")\n')
+    e = RuleEngine.from_string(source)
+    assert e.decide('access', {}).allowed is expected
+
+
+def test_public_exports():
+    import rulea
+    assert set(rulea.__all__) == {'RuleEngine', 'Decision', 'Result', 'Trace', 'PolicyError'}
+    assert not hasattr(rulea, 'parse_rule_file')

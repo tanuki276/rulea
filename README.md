@@ -37,7 +37,7 @@ rule owner:
     reason: "Only the owner may edit"
 
 rule editable:
-    when: allow("owner") and not resource.locked
+    when: matches("owner") and not resource.locked
     reason: "Owner required and document must be unlocked"
 
 rule locked:
@@ -61,7 +61,7 @@ obsolete `action`/`extends` fields are load errors, not silently ignored.
 
 Expressions support plain fact paths (`user.id` or `user["id"]`), JSON scalar
 literals, list/tuple literals, `and`, `or`, `not`, chained comparisons
-(`== != < <= > >=`), membership (`in`, `not in`) and `allow("rule")`.
+(`== != < <= > >=`), membership (`in`, `not in`) and `matches("rule")`.
 Boolean operators short-circuit and require actual booleans. No arithmetic,
 comprehensions, arbitrary calls, methods, private attributes, assignment or Python
 imports are available. Expression size, AST depth and node count are bounded.
@@ -80,7 +80,7 @@ Nonfinite floats and deeply nested facts are rejected. Inputs are copied, never 
 | NOT_APPLICABLE | Unknown/disabled rule, or unmatched rule inside a ruleset |
 | ERROR | Missing/invalid facts or evaluation failure |
 
-A direct rule is a predicate: a false condition returns DENY. Within a ruleset,
+A direct rule evaluation converts a false condition to DENY. Within a ruleset,
 a false condition is NOT_APPLICABLE, allowing other rules to decide. A matching
 rule returns its declared effect. `decision.allowed` and `bool(decision)` are
 true only for ALLOW; `engine.check(name, context)` preserves the legacy
@@ -102,10 +102,33 @@ rule uses the explicitly declared default (ALLOW, DENY or NOT_APPLICABLE).
 Short-circuited rules are not evaluated. Each ruleset decision contains the
 strategy, winning rule (or default), and all evaluated child decisions.
 
+The formal v2 predicate reference is `matches("rule")`; `allow()` is rejected.
+A predicate is the boolean `when` condition, not a Decision. Only rules whose
+`effect` is ALLOW (including the default) can serve as predicate references.
+Referencing an `effect: DENY` rule is a load-time PolicyError, even under `not`
+or inside an unreachable branch. Explicit denials belong in rulesets.
+
+| Evaluation | Condition true | Condition false |
+| --- | --- | --- |
+| Direct rule, effect ALLOW | ALLOW | DENY |
+| Direct rule, effect DENY | DENY | DENY |
+| Ruleset member, effect ALLOW | ALLOW | NOT_APPLICABLE |
+| Ruleset member, effect DENY | DENY | NOT_APPLICABLE |
+| `matches()` of enabled ALLOW rule | True | False |
+
+Unknown references fail loading. A disabled ALLOW predicate returns False;
+`not matches()` can invert that boolean. Errors propagate as ERROR, never as
+False. Negation of a predicate failure is intentional and cannot invert an
+explicit DENY because DENY rules cannot be referenced. For example, a block
+condition can be declared as an ALLOW predicate and used via `not matches()`,
+while an actual `effect: DENY` rule must be combined through a ruleset.
+Child decisions in composition traces use ALLOW/NOT_APPLICABLE for matched/
+unmatched predicates; they are not independent direct-rule evaluations.
+
 Composition resolves an unqualified name in the current namespace first, then
 as an absolute name. Only rules can be referenced, not rulesets. Unknown
 references and cycles fail during loading. Each rule is evaluated at most once
-per request. A referenced ERROR propagates through `allow`, including beneath
+per request. A referenced ERROR propagates through `matches`, including beneath
 `not`; it cannot become an accidental permission grant.
 
 ## Schemas, modules and replay
@@ -123,7 +146,7 @@ a name-to-source mapping; imported modules should declare their own namespace:
 
 ```python
 engine = RuleEngine.from_string(
-    'import shared\nrule edit:\n    when: allow("common.owner")\n',
+    'import shared\nrule edit:\n    when: matches("common.owner")\n',
     modules={"shared": 'namespace common\nrule owner:\n    when: user.id == resource.owner\n'},
 )
 ```
@@ -182,8 +205,44 @@ policy/input or ERROR. Benchmark timing is tooling output, never decision data.
 This is a major release. Existing simple one-line rules and `check()` remain
 usable; conditions now require booleans and undefined variables are errors.
 Fix rule-name mismatches (the legacy example declares `can_edit`, not `edit`).
-Replace `extends` with explicit `allow()` composition. Move every action to the
+Replace `extends` with explicit `matches()` composition. Move every action to the
 host application; ActionRegistry has been removed. The permissive parser and
 legacy positional CLI are replaced by strict validation and subcommands.
 Python 3.8 support is dropped. No policy server, audit database, management UI,
 workflow engine or framework dependency is included in the core.
+
+## Public API contract (2.x)
+
+Stable top-level exports are `RuleEngine`, `Decision`, `Result`, `Trace`, and
+`PolicyError`, plus `__version__`. Supported engine interfaces are the path
+constructor, `from_string`, `decide`, `check`, `policy_version` and `policy_hash`.
+Decision/Trace data fields, `Decision.allowed`, bool conversion and `to_dict()`
+are public. `Result` retains the four documented values. The DSL reference
+function is `matches()`; no decision-reference `allow()` alias is provided.
+Parser/compiler/evaluator modules, their ASTs and engine internals are not
+stable API. `parse_rule_file` is no longer a top-level export; its internal
+helper is not covered by 2.x compatibility guarantees. Use RuleEngine to parse
+and validate policies. This is a pre-2.0 syntax correction, not a 2.x rename.
+
+## Release procedure
+
+The only publishing workflow is `.github/workflows/python-publish.yml`, triggered
+by a published GitHub Release. Main pushes and PRs only run checks. The workflow
+builds wheel and sdist, validates metadata, runs tests, installs the wheel in an
+isolated environment and executes examples before passing artifacts to a separate
+OIDC publishing job. There is no stored PyPI token or password fallback.
+
+Before releasing, configure the rulea PyPI Trusted Publisher with owner
+`tanuki276`, repository `rulea`, workflow `python-publish.yml`, environment `pypi`.
+The GitHub `pypi` environment and any desired release protection rules must also
+be configured by a maintainer. Workflow YAML alone cannot verify that PyPI trusts
+the repository. See [PyPI setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/).
+
+1. Make the PR ready and require the test matrix plus distribution checks to pass.
+2. Review and merge. Match the Release tag (`2.0.0` or `v2.0.0`) to project.version.
+3. Publish a GitHub Release from that commit; the single workflow publishes to PyPI.
+4. Inspect the publish job and verify the released package installation.
+
+`pyproject.toml` is the sole metadata source. The existing LICENSE is preserved
+and included as package license metadata; the former MIT classifier did not
+match that file and has been removed. No license grant is changed by v2.
