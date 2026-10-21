@@ -1,25 +1,10 @@
+from pathlib import Path
 from rulea import RuleEngine
 
-# ルールファイルのパス
-engine = RuleEngine("examples/access.rulea")
-
-# 実行時のデータ
-context = {
-    "user": {
-        "username": "alice",
-        "is_authenticated": True
-    },
-    "role": "user",
-    "resource": {
-        "owner": "alice",
-        "status": "active"
-    }
-}
-
-# ルールの評価
-for rule_name in ["can_view", "can_edit", "can_delete"]:
-    result, reason = engine.check(rule_name, context)
-    if result:
-        print(f"[✅ {rule_name}] → 許可")
-    else:
-        print(f"[❌ {rule_name}] → 拒否: {reason}")
+engine = RuleEngine(Path(__file__).with_name("documents.rulea"))
+decision = engine.decide("documents.edit", {
+    "user": {"id": 100},
+    "resource": {"owner": 100, "locked": False, "status": "draft"},
+})
+print(decision.to_dict())
+# The host application performs actions only after checking decision.allowed.

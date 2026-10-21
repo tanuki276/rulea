@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rulea"
-version = "1.1.2"
-description = "Rule-based programmable language in Python"
+version = "2.0.0"
+description = "Embeddable, safe and explainable decision language for Python"
 authors = [
   { name="soln", email="you@example.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 classifiers = [
   "Programming Language :: Python :: 3",
