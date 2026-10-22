@@ -11,12 +11,16 @@ from .model import PolicyError, Result
 def main(argv=None):
     parser = argparse.ArgumentParser(description="rulea v2 decision tools")
     sub = parser.add_subparsers(dest="command", required=True)
-    for command in ("check", "lint", "explain", "test", "benchmark", "fmt"):
+    for command in ("check", "lint", "explain", "test", "benchmark", "fmt", "diff", "simulate"):
         p = sub.add_parser(command)
         p.add_argument("policy")
         if command in ("explain", "benchmark"):
             p.add_argument("rule")
             p.add_argument("--context", "-c", default="{}")
+        if command in ("diff", "simulate"):
+            p.add_argument("candidate")
+        if command == "simulate":
+            p.add_argument("cases")
         if command == "test":
             p.add_argument("cases", help="JSON array of {rule, context, result}")
         if command == "benchmark":
@@ -25,6 +29,22 @@ def main(argv=None):
             p.add_argument("--write", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.command in ("diff", "simulate", "lint", "test"):
+            from .quality import lint, run_suite, semantic_diff, behavioral_diff
+            source = Path(args.policy).read_text(encoding="utf-8")
+            if args.command == "lint":
+                diagnostics = lint(source)
+                print(json.dumps([d.to_dict() for d in diagnostics], indent=2))
+                return int(any(d.severity == "ERROR" for d in diagnostics))
+            if args.command == "test":
+                report = run_suite(source, json.loads(Path(args.cases).read_text(encoding="utf-8")))
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                return int(report["passed"] != report["total"])
+            candidate = Path(args.candidate).read_text(encoding="utf-8")
+            report = semantic_diff(source, candidate) if args.command == "diff" else behavioral_diff(
+                source, candidate, json.loads(Path(args.cases).read_text(encoding="utf-8")))
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0
         engine = RuleEngine(args.policy)
         if args.command in ("check", "lint"):
             print("Policy valid: " + engine.policy_hash)
@@ -39,18 +59,6 @@ def main(argv=None):
             else:
                 print(formatted, end="")
             return 0
-        if args.command == "test":
-            cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
-            if type(cases) is not list or not cases:
-                raise ValueError("Cases must be a nonempty JSON array")
-            failed = 0
-            for number, case in enumerate(cases, 1):
-                result = engine.decide(case["rule"], case["context"])
-                expected = Result(case["result"])
-                passed = result.result is expected
-                failed += not passed
-                print("{} {}: {}".format(number, "PASS" if passed else "FAIL", result.result.value))
-            return 1 if failed else 0
         context = json.loads(args.context)
         if args.command == "explain":
             decision = engine.decide(args.rule, context)

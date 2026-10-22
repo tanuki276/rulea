@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rulea"
-version = "2.0.0"
+version = "2.1.0a1"
 description = "Embeddable, safe and explainable decision language for Python"
 authors = [
   { name="tanuki276" }
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
+dependencies = ["jsonschema>=4.23,<5"]
 license = "Apache-2.0"
 classifiers = [
   "Programming Language :: Python :: 3",

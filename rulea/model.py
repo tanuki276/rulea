@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Tuple
 
-ENGINE_VERSION = "2.0.0"
+ENGINE_VERSION = "2.1.0a1"
 
 
 class PolicyError(ValueError):

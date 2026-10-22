@@ -246,3 +246,39 @@ the repository. See [PyPI setup](https://docs.pypi.org/trusted-publishers/adding
 ## License
 
 Rulea is licensed under the Apache License 2.0. See `LICENSE` for the full license text.
+
+## Policy quality tools (2.1 alpha)
+
+These tools run locally without a Rulease server or database:
+
+```sh
+rulea lint policy.rulea
+rulea test policy.rulea cases.json
+rulea diff baseline.rulea candidate.rulea
+rulea simulate baseline.rulea candidate.rulea contexts.json
+```
+
+`lint()` returns diagnostics with `code`, `severity` (`INFO`, `WARNING`,
+`ERROR`), `message` and `rule`. It reports compiler errors, missing reasons,
+constant boolean conditions, disabled rules and provably shadowed first-match
+or priority members. `lint(source, entrypoints=[...])` additionally finds unused
+rules relative to explicit entry points. It does not claim general theorem
+proving or infer that public entry points are unused.
+
+Test cases retain the existing `{rule, context, result}` format, or use:
+
+```json
+[{"name":"minor","rule":"checkout.adult","context":{"age":17},
+  "expect":{"result":"DENY","reason":"minimum_age",
+            "trace_contains":["age >= 18"],"decision_count":1}}]
+```
+
+`decision_count` includes the root and recursive child decisions. `children`
+assertions match a descendant by exact `rule`, `result`, and/or `reason` fields.
+`run_suite(..., schema=...)` validates contexts against JSON Schema 2020-12.
+Remote schema references are rejected; validation never retrieves a URL.
+
+`semantic_diff()` reports added/removed declarations and exact changed fields.
+`behavioral_diff()` compares results, reasons and child decisions on identical
+inputs. Its changed case indices refer to the caller's input sequence; the
+report does not copy private contexts. Compilation errors abort the comparison.
