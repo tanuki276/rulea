@@ -86,6 +86,7 @@ def lint(source, *, modules=None, entrypoints=None):
 def validate_context(schema, context):
     """JSON Schema 2020-12 without remote reference resolution or I/O."""
     from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import SchemaError
     def check(value):
         if isinstance(value, dict):
             if '$ref' in value and not value['$ref'].startswith('#'):
@@ -98,7 +99,10 @@ def validate_context(schema, context):
             for child in value:
                 check(child)
     check(schema)
-    Draft202012Validator.check_schema(schema)
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        raise PolicyError('Invalid JSON Schema: ' + exc.message) from exc
     return [dict(path=list(e.absolute_path), message=e.message)
             for e in sorted(Draft202012Validator(schema).iter_errors(context), key=lambda e: str(e.absolute_path))]
 
@@ -115,9 +119,24 @@ def run_suite(source, cases, *, modules=None, schema=None):
         raise ValueError('Cases must be a nonempty array')
     results = []
     for index, case in enumerate(cases):
+        if not isinstance(case, dict) or not isinstance(case.get('rule'), str) or not isinstance(case.get('context'), dict):
+            raise ValueError('Each case requires a string rule and object context')
         expected = case.get('expect', {'result': case.get('result')})
-        if not expected or set(expected) - {'result', 'reason', 'trace_contains', 'decision_count', 'children'}:
+        if not isinstance(expected, dict) or not expected or set(expected) - {'result', 'reason', 'trace_contains', 'decision_count', 'children'}:
             raise ValueError('Unknown or empty assertion')
+        if 'result' in expected and expected['result'] not in ('ALLOW', 'DENY', 'ERROR', 'NOT_APPLICABLE'):
+            raise ValueError('Invalid expected result')
+        if 'reason' in expected and not isinstance(expected['reason'], str):
+            raise ValueError('Expected reason must be a string')
+        trace = expected.get('trace_contains', [])
+        if not isinstance(trace, list) or any(not isinstance(t, str) for t in trace):
+            raise ValueError('trace_contains must be an array of strings')
+        if 'decision_count' in expected and (type(expected['decision_count']) is not int or expected['decision_count'] < 1):
+            raise ValueError('decision_count must be a positive integer')
+        children = expected.get('children', [])
+        if not isinstance(children, list) or any(not isinstance(c, dict) or not c or
+                set(c) - {'rule', 'result', 'reason'} or any(not isinstance(v, str) for v in c.values()) for c in children):
+            raise ValueError('children must contain nonempty rule/result/reason assertions')
         errors = []
         if schema is not None:
             errors.extend(e['message'] for e in validate_context(schema, case['context']))

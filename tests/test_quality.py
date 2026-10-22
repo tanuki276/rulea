@@ -54,3 +54,15 @@ def test_diffs_do_not_echo_context():
     assert report['changes'][0]['index'] == 1
     assert 'secret' not in str(report)
     assert behavioral_diff(SOURCE, SOURCE, [])['changed_percent'] == 0
+
+
+@pytest.mark.parametrize('expect', [{'result': 'unknown'}, {'reason': 1}, {'trace_contains': 'x'},
+    {'decision_count': True}, {'children': [{}]}, {'children': [{'unknown': 'value'}]}])
+def test_invalid_assertions_are_rejected(expect):
+    with pytest.raises(ValueError):
+        run_suite(SOURCE, [dict(rule='checkout.adult', context={'age': 18}, expect=expect)])
+
+
+def test_invalid_schema_is_a_policy_error():
+    with pytest.raises(PolicyError, match='Invalid JSON Schema'):
+        validate_context({'type': 'not-a-json-type'}, {})
